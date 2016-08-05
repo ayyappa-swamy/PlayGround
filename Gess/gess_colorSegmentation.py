@@ -1,14 +1,14 @@
 import cv2 as cv
 import numpy as np
 import matplotlib.pyplot as plot
-import scipy as sp
+from scipy import stats
 
-videoObj = cv.videoCapture(0)
+videoObj = cv.VideoCapture(0)
 
 # It prompts the user to place the hand in the boundary shown
 # The hand boundary is drawn by using a sample hand5.jpg image in workspace
 # When the user places their hand, it is masked with a hand mask to retrieve the hand portion from current frame
-def getHandImage:
+def getHandImage():
 
 	handImage = []
 	hand = cv.imread('/home/ayyappa/Documents/PythonWorkspace/PlayGround/hand5.jpg')
@@ -47,7 +47,7 @@ def getHandImage:
 		if cv.waitKey(1) & 0xFF == ord('q') :
 			break
 
-	cap.release()
+	#cap.release()
 
 	cv.imshow('finalhand',handImage)
 	cv.waitKey(0)
@@ -55,27 +55,52 @@ def getHandImage:
 
 	return handImage
 
-# It computes the mean and variance of input HSV image
-# plane - parameter to select the plane => 's', 'h', 'v'
-def computeMeanVariance(handImage_hsv,plane) :
+# It computes the mean and standard deviation of input HSV image
+# plane - parameter to select the plane => 0,1,2
+def computeStats(handImage_hsv,dimension) :
 	mean = 0
-	variance = 0
-	mean = numpy.mean(array)
-	variance = numpy.var(array) #Think if we can directly use standard deviation numpy.std
-	return mean, variance
+	std = 0
+	mean = np.mean(handImage_hsv[:,:,dimension])
+	std = np.std(handImage_hsv[:,:,dimension])
+	return mean, std
 
-# It equalizes the luminance of the YCrCb image.
-def equalizeLuminance(image_YCrCb):
-	image_YCrCb[:,:,0] = cv.equalizeHist(image_YCrCb[:,:,0])
-	return image_YCrCb
+# It equalizes the luminance of an image.
+def equalizeLuminance(image):
+	#image = cv.imread('/home/ayyappa/Documents/PythonWorkspace/PlayGround/temp.png')
+	channels = []
+	image_YCrCb = cv.cvtColor(image, cv.COLOR_BGR2YCR_CB)
+
+	y,cr,cb = cv.split(image_YCrCb)
+	y = cv.equalizeHist(y)
+
+	image_YCrCb = cv.merge((y, cr, cb))
+	#cv.imshow('equalized', image_YCrCb)
+	#cv.waitKey(0)
+	image = cv.cvtColor(image_YCrCb, cv.COLOR_YCR_CB2BGR)
+
+	return image
+
+# It detects the skin coloured pixels in the input frame by
+# by calculating the gaussian probability
+def detectSkinPixels(image, parameters):
+	s_probability = stats.norm.pdf(image[:,:,1], parameters['s']['mean'], parameters['s']['std'])
+	h_probability = stats.norm.pdf(image[:,:,0], parameters['h']['mean'], parameters['h']['std'])
+	print "S Probability - max:", np.max(s_probability), " min: ",np.min(s_probability) # range 0.035 max inverting
+	print "H Probability - max:", np.max(h_probability), " min: ",np.min(h_probability) # range 0.039 max working better
+	#_#_#_#_#_#_#_#_#_#_ Book mark. equalization not much satisfying
+	cv.imshow('s_probability',s_probability)
+	cv.imshow('h_probability',h_probability)
 
 # It calculates the coordinates of the hand portion in current frame
 def getHandCoordinates(currentFrame, parameters):
 	x = 0
 	y = 0
 
-	skinBlob = detectSkinPixels(currentFrame, parameters)
-	handBlob = detectHandPixels(skinBlob)
+	currentFrame = equalizeLuminance(currentFrame)
+	currentFrame_hsv = cv.cvtColor(currentFrame, cv.COLOR_BGR2HSV)
+
+	skinBlob = detectSkinPixels(currentFrame_hsv, parameters)
+	#handBlob = detectHandPixels(skinBlob)
 
 	""""# --> Helper for calculating probability from scipy import stats
 	>>> # PDF of Gaussian of mean = 0.0 and std. deviation = 1.0 at 0.
@@ -90,25 +115,20 @@ def getHandCoordinates(currentFrame, parameters):
 # by invoking respective functions for Histogram equalization -> calculate parameters
 def getHandParameters(handImage):
 
-	handImage_ycrcb = cv.cvtColor(handImage, cv.COLOR_BGR2YCrCb)
-
-	handImage_ycrcb = equalizeLuminance(handImage_ycrcb)
-
-	handImage = cv.cvtColor(handImage_ycrcb, cv.COLOR_YCrCb2BGR)
+	handImage = equalizeLuminance(handImage)
 
 	handImage_hsv = cv.cvtColor(handImage, cv.COLOR_BGR2HSV)
-
-	s_mean, s_variance = computeMeanVariance(handImage_hsv, 's')
-	h_mean, h_variance = computeMeanVariance(handImage_hsv, 'h')
+	s_mean, s_std = computeStats(handImage_hsv, 1)
+	h_mean, h_std = computeStats(handImage_hsv, 0)
 
 	parameterDictionary = {
 		"s" : {
 			"mean" : s_mean,
-			"variance" : s_variance
+			"std" : s_std
 		},
 		"h" : {
 			"mean" : h_mean,
-			"variance" : h_variance
+			"std" : h_std
 		}
 	}
 
@@ -120,23 +140,20 @@ def plotHandCentroid(x,y) :
 
 # It captures each frame from camera and plots the centroid of hand portion in input frame
 def detectHand():
-
 	handImage = getHandImage()
-
+	cv.imwrite('temp.jpg',handImage)
 	parameters = getHandParameters(handImage)
-
+	print parameters
 	while True:
 		ret, currentFrame = videoObj.read()
-
 		[x, y] = getHandCoordinates(currentFrame, parameters)
 
-		plotHandCentroid(x, y)
-
+		#plotHandCentroid(x, y)
 		if cv.waitKey(1) & 0xFF == ord('q') :
 			break
-
 	return 0
 
+detectHand()
 	#mask = getHandMask
 
 	#handOutline = cv2.morphologyEx(pass the arguments)
